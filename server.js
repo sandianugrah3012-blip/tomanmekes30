@@ -1,42 +1,64 @@
 const express = require("express");
 const app = express();
 
-const port = process.env.PORT || 3000;
+app.use(express.json());
 
-const tokens = [
-  "12345",
-  "toman30",
-  "user001",
-  "premium123"
+// 🔐 Database sederhana
+let users = [
+  { username: "user1", token: "ABC123", used: false },
+  { username: "user2", token: "XYZ789", used: false }
 ];
 
+// 🌐 Halaman login
 app.get("/", (req, res) => {
-  res.send("Server Token Aktif");
+  res.send(`
+    <h2>LOGIN TOKEN</h2>
+    <input id="username" placeholder="Username"/><br><br>
+    <input id="token" placeholder="Token"/><br><br>
+    <button onclick="login()">Login</button>
+
+    <p id="result"></p>
+
+    <script>
+      async function login() {
+        const username = document.getElementById("username").value;
+        const token = document.getElementById("token").value;
+
+        const res = await fetch("/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, token })
+        });
+
+        const data = await res.json();
+        document.getElementById("result").innerText = data.message;
+      }
+    </script>
+  `);
 });
 
-app.get("/check", (req, res) => {
-  const token = req.query.token;
+// 🔑 API LOGIN
+app.post("/login", (req, res) => {
+  const { username, token } = req.body;
 
-  if (!token) {
-    return res.json({
-      status: "error",
-      message: "token tidak dikirim"
-    });
+  const user = users.find(
+    u => u.username === username && u.token === token
+  );
+
+  if (!user) {
+    return res.json({ message: "❌ Username / Token salah" });
   }
 
-  if (tokens.includes(token)) {
-    return res.json({
-      status: "valid",
-      token: token
-    });
-  } else {
-    return res.json({
-      status: "invalid",
-      token: token
-    });
+  if (user.used) {
+    return res.json({ message: "❌ Token sudah dipakai" });
   }
+
+  user.used = true;
+
+  res.json({ message: "✅ Login berhasil (token aktif)" });
 });
 
-app.listen(port, () => {
-  console.log("Server jalan di port " + port);
+// PORT Railway
+app.listen(process.env.PORT || 3000, () => {
+  console.log("Server jalan");
 });
