@@ -1,119 +1,133 @@
 const express = require("express");
-const fs = require("fs");
+const { Pool } = require("pg");
 
 const app = express();
 app.use(express.json());
 
-const DB_FILE = "./db.json";
+// ============================
+// KONEK DATABASE RAILWAY
+// ============================
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false,
+  },
+});
 
-//////////////////////////////
-// LOAD DATABASE
-//////////////////////////////
-function loadDB() {
-  if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify({ users: [] }, null, 2));
-  }
-  return JSON.parse(fs.readFileSync(DB_FILE));
-}
-
-//////////////////////////////
-// SAVE DATABASE
-//////////////////////////////
-function saveDB(data) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-}
-
-//////////////////////////////
-// GENERATE TOKEN
-//////////////////////////////
-function generateToken() {
-  return Math.random().toString(36).substring(2, 12).toUpperCase();
-}
-
-//////////////////////////////
-// ROOT
-//////////////////////////////
+// ============================
+// ROOT (CEK SERVER)
+// ============================
 app.get("/", (req, res) => {
   res.send("🚀 SERVER TOKEN AKTIF");
 });
 
-//////////////////////////////
-// LIST USER
-//////////////////////////////
-app.get("/list", (req, res) => {
-  const db = loadDB();
-  res.json(db.users);
-});
+// ============================
+// GENERATE TOKEN RANDOM
+// ============================
+function generateToken() {
+  return Math.random().toString(36).substring(2, 10).toUpperCase();
+}
 
-//////////////////////////////
-// LOGIN (TOKEN 1x PAKAI)
-//////////////////////////////
-app.post("/login", (req, res) => {
-  const { username, token } = req.body;
-  const db = loadDB();
+// ============================
+// BUAT TOKEN BARU
+// ============================
+app.get("/buat-token", async (req, res) => {
+  const kode = generateToken();
 
-  const user = db.users.find(
-    (u) => u.username === username && u.token === token
-  );
+  try {
+    await pool.query(
+      "INSERT INTO token (kode, status) VALUES ($1, true)",
+      [kode]
+    );
 
-  // ❌ token salah
-  if (!user) {
-    return res.json({
-      status: "error",
-      message: "Token tidak valid",
+    res.json({
+      success: true,
+      kode: kode,
+    });
+  } catch (err) {
+    res.json({
+      success: false,
+      error: err.message,
     });
   }
+});
 
-  // ❌ sudah dipakai
-  if (user.used === true) {
-    return res.json({
-      status: "error",
-      message: "Token sudah digunakan",
+// ============================
+// CEK TOKEN (UNTUK APK)
+// ============================
+app.get("/cek-token", async (req, res) => {
+  const { kode } = req.query;
+
+  if (!kode) {
+    return res.json({ status: false, pesan: "Kode kosong" });
+  }
+
+  try {
+    const result = await pool.query(
+      "SELECT * FROM token WHERE kode = $1 AND status = true",
+      [kode]
+    );
+
+    if (result.rows.length > 0) {
+      res.json({
+        status: true,
+        pesan: "Token valid",
+      });
+    } else {
+      res.json({
+        status: false,
+        pesan: "Token tidak valid",
+      });
+    }
+  } catch (err) {
+    res.json({
+      status: false,
+      error: err.message,
     });
   }
-
-  // ✅ tandai sudah dipakai
-  user.used = true;
-  saveDB(db);
-
-  res.json({
-    status: "success",
-    message: "Login berhasil (token aktif)",
-  });
 });
 
-//////////////////////////////
-// GENERATE TOKEN (ADMIN)
-//////////////////////////////
-app.get("/generate", (req, res) => {
-  const { username } = req.query;
+// ============================
+// NONAKTIFKAN TOKEN
+// ============================
+app.get("/disable-token", async (req, res) => {
+  const { kode } = req.query;
 
-  if (!username) {
-    return res.send("Masukkan username");
+  try {
+    await pool.query(
+      "UPDATE token SET status = false WHERE kode = $1",
+      [kode]
+    );
+
+    res.json({
+      success: true,
+      pesan: "Token dinonaktifkan",
+    });
+  } catch (err) {
+    res.json({
+      success: false,
+      error: err.message,
+    });
   }
-
-  const db = loadDB();
-  const token = generateToken();
-
-  db.users.push({
-    username,
-    token,
-    used: false,
-  });
-
-  saveDB(db);
-
-  res.send(`
-    <h2>Token berhasil dibuat</h2>
-    <p>Username: ${username}</p>
-    <p>Token: ${token}</p>
-  `);
 });
 
-//////////////////////////////
-// PORT RAILWAY
-//////////////////////////////
+// ============================
+// LIST SEMUA TOKEN (OPSIONAL)
+// ============================
+app.get("/list-token", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM token ORDER BY id DESC");
+
+    res.json(result.rows);
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
+
+// ============================
+// JALANKAN SERVER
+// ============================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("Server jalan di port " + PORT);
+  console.log("Server jalan di port", PORT);
 });
